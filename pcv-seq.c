@@ -221,10 +221,10 @@ path_list* new_path_list(){
 */
 void delete_path_list(path_list* pl){
     free(pl->paths);
+    pl->paths = NULL;
     free(pl);
     pl = NULL;
 }
-
 
 /**
  * Libera os paths dentro de uma path list,
@@ -257,7 +257,6 @@ void concatenate_to_path_list(path_list* pl, path* p){
         pl->_actual_size = new_size;
     }
 
-
     pl->paths[pl->size++] = p;
 }
 
@@ -284,15 +283,15 @@ int get_path_list_paths_cost(path_list* pl, int** adj){
  * Junta duas path lists em uma
  * 
  * @param dest uma das path lists, onde o resultado ficará armazenado
- * @param other a outra path list, que terá seus paths concatenados à path_list dest e será liberada
+ * @param other a outra path list
  * 
  * @returns void
 */
 void merge_path_lists(path_list* dest, path_list* other){
     for(int i = 0; i<other->size; i++){
-        concatenate_to_path_list(dest, other->paths[i]);
+        path* copy = copy_path(other->paths[i]);
+        concatenate_to_path_list(dest, copy);
     }
-    delete_path_list(other);
 }
 
 /*
@@ -324,7 +323,7 @@ int** get_cost_matrix(int n){
  * 
  * @param n o número de nós no grafo
  * @param adj a lista de adjacências do grafo, com os pesos
- * @param initial_path o caminho inicial. Esse caminho será deletado pela função após utilizado.
+ * @param initial_path o caminho inicial.
  * 
  * @returns uma lista de caminhos com o menor custo
 */
@@ -332,8 +331,8 @@ path_list* solve_problem(int n, int** adj, path* initial_path){
     //printf("Solve problem chamado para o caminho: ");
     //print_path(initial_path);
     if(initial_path->size == n){ //Caso base
-        concatenate_to_path(initial_path, STARTING_NODE);
         path* res = copy_path(initial_path);
+        concatenate_to_path(res, STARTING_NODE);
         path_list* pl = new_path_list();
         concatenate_to_path_list(pl,res);
         return pl;
@@ -360,6 +359,8 @@ path_list* solve_problem(int n, int** adj, path* initial_path){
                 concatenate_to_path(p,i);
 
                 pll[i] = solve_problem(n, adj, p);
+
+                delete_path(p);
             }
 
             // Obtém o custo mínimo dos caminhos possíveis
@@ -369,20 +370,15 @@ path_list* solve_problem(int n, int** adj, path* initial_path){
             }
         }
 
-        // O caminho inicial não tem mais uso
-        delete_path(initial_path);
-
         path_list* res = new_path_list(); //A path list que armazena a resposta
 
         for(int i = 0; i<n; i++){
             if(get_path_list_paths_cost(pll[i], adj) == min_cost){
                 merge_path_lists(res,pll[i]);
-                
             }
-            else{
-                delete_path_list_paths(pll[i]); //Esses caminhos não serão mais utilizados
-                delete_path_list(pll[i]);
-            }
+
+            delete_path_list_paths(pll[i]);
+            delete_path_list(pll[i]);
         }
 
         free(pll);
@@ -433,6 +429,7 @@ int main(int argc, char** argv){
     path_list* res = solve_problem(n,costs, initial_path);
     print_answer(res, costs, n);
 
+    delete_path(initial_path);
     delete_path_list_paths(res);
     delete_path_list(res);
     delete_matrix(costs,n);
