@@ -4,9 +4,9 @@
  * Pedro Henrique Dias Junqueira de Souza
  * Rafael Kuhn Takano
  *
- * Utilize o comando "make seq" para compilar esse código
+ * Utilize o comando "make par" para compilar esse código
  * O código será compilado no binário pcv, que pode ser
- * executado com "./pcv N"
+ * executado com "mpirun NP ./pcv N", com NP sendo o número de processos
 */
 
 #include <stdio.h>
