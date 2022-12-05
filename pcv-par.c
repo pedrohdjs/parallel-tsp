@@ -26,6 +26,7 @@
 #define COST_NOT_COMPUTED 0
 #define PATH_LIST_SIZE 32
 #define PATH_LIST_EMPTY -1
+#define MANAGER_PROCESS_RANK 0
 
 typedef struct _path { //Um caminho
     int nodes[MAX_PATH_SIZE]; //Os nós no caminho
@@ -55,6 +56,24 @@ int** new_matrix(int n, int m){
     int** matrix = (int**)malloc(n*sizeof(int*));
     for(int i = 0; i < n; i++){
         matrix[i] = (int*)malloc(m*sizeof(int));
+    }
+
+    return matrix;
+}
+
+/**
+ * Aloca dinamicamente uma matriz com linhas de vários
+ * tamanhos especificados em v
+ * 
+ * @param n o número de linhas da matriz
+ * @param v o número de colunas de cada linha
+ * 
+ * @return a matriz alocada
+*/
+int** new_matrixv(int n, int* v){
+    int** matrix = (int**)malloc(n*sizeof(int*));
+    for(int i = 0; i < n; i++){
+        matrix[i] = (int*)malloc(v[i]*sizeof(int));
     }
 
     return matrix;
@@ -318,6 +337,55 @@ int get_path_list_paths_cost(path_list* pl, int** adj){
 }
 
 /**
+ * Serializa a path list em um array alocado dinamicamente
+ * com vários paths de tamanho path_size
+ * 
+ * @param pl a path list a ser serializada
+ * @param path_size o tamanho dos caminhos na path list
+ * @return int* 
+ */
+int* serialize_path_list(path_list* pl, int path_size){
+    int* res = (int*)malloc((pl->size)*path_size*sizeof(int));
+
+    for(int i = 0; i<pl->size; i++){
+        /*memcpy não pode ser utilizado aqui por conta da memória 
+        alocada estaticamente (pl->paths[i]->nodes)*/
+        for(int j = 0; j<path_size; j++){
+            res[(path_size*i)+j] = pl->paths[i]->nodes[j];
+        }
+    }
+
+    return res;
+}
+
+/**
+ * Desserializa uma path list serializada pela função
+ * serialize_path_list
+ * 
+ * @param spl a path list serializada
+ * @param spl_size o comprimento de spl
+ * @param path_size o tamanho dos caminhos em spl
+ * @return path_list* 
+ */
+path_list* deserialize_path_list(int* spl, int spl_size, int path_size){
+    path_list* pl = new_path_list();
+    int num_paths = spl_size/path_size;
+
+    for(int i = 0; i<num_paths; i++){
+        path* p = new_path();
+        p->size = path_size;
+        for(int j = 0; j<path_size; j++){
+            /*memcpy não pode ser utilizado aqui por conta da memória 
+            alocada estaticamente (pl->paths[i]->nodes)*/
+            p->nodes[j] = spl[(path_size)*i + j];
+        }
+        concatenate_to_path_list(pl, p);
+    }
+
+    return pl;
+}
+
+/**
  * Junta duas path lists em uma, copindo os elementos da segunda e os concatenando à primeira
  * 
  * @param dest uma das path lists, onde o resultado ficará armazenado
@@ -378,69 +446,6 @@ void get_process_range(int* start, int* end, int world_size, int rank, int n){
         *start = (rank * chunk_size) + 1;
         *end = ((*start) + chunk_size) - 1;
     }
-}
-
-path_list* solve_problem(int n, int** adj, path* initial_path);
-
-/**
- * Resolve o problema para um dado n, uma lista de adjacências, o caminho inicial e uma range
- * definida por min e max.
- * Esta é uma versão alterada de solve_problem, que utiliza solve_problem
- * para fazer a dfs apenas para alguns caminhos específicos.
- * 
- * @param n o número de nós no grafo
- * @param adj a lista de adjacências do grafo, com os pesos
- * @param initial_path o caminho inicial. Esse caminho será deletado pela função após utilizado.
- * @param min o mínimo da range
- * @param max o máximo da range
- * 
- * @returns uma lista de caminhos com o menor custo
-*/
-path_list* solve_problem_for_range(int n, int** adj, path* initial_path, int min, int max){
-    int range_size = (max-min) + 1;
-
-    path_list** pll = new_path_list_list(range_size); //Lista de todos os path lists gerados
-    int min_cost = __INT_MAX__; //Custo mínimo dos caminhos
-
-    for(int i = min; i <= max; i++){
-        int current_node = initial_path->nodes[initial_path->size-1];
-        int idx = i-min; //O índice de pll dessa resposta
-        
-        /* somente seguir com a geração da path list 
-        a partir de uma aresta existente do nó atual 
-        para o nó da iteração (custo diferente do custo máximo) */
-        if(!adj[current_node][i] < MAX_COST){ 
-            path* p = copy_path(initial_path);
-            concatenate_to_path(p,i);
-
-            pll[idx] = solve_problem(n, adj, p);
-            delete_path(p);
-        }
-        else{
-            pll[idx] = new_path_list(); //É uma path list vazia
-        }
-
-        // Obtém o custo mínimo dos caminhos possíveis
-        int cost = get_path_list_paths_cost(pll[idx], adj);
-        if(cost != PATH_LIST_EMPTY && cost < min_cost){
-            min_cost = cost;
-        }
-    }
-
-    path_list* res = new_path_list(); //A path list que armazena a resposta
-
-    for(int i = 0; i<range_size; i++){
-        if(get_path_list_paths_cost(pll[i], adj) == min_cost){
-            merge_path_lists(res,pll[i]);
-        }
-
-        delete_path_list_paths(pll[i]);
-        delete_path_list(pll[i]);
-    }
-
-    free(pll);
-
-    return res;
 }
 
 /**
@@ -520,6 +525,69 @@ path_list* solve_problem(int n, int** adj, path* initial_path){
     }
 }
 
+
+/**
+ * Resolve o problema para um dado n, uma lista de adjacências, o caminho inicial e uma range
+ * definida por min e max.
+ * Esta é uma versão alterada de solve_problem, que utiliza solve_problem
+ * para fazer a dfs apenas para alguns caminhos específicos.
+ * 
+ * @param n o número de nós no grafo
+ * @param adj a lista de adjacências do grafo, com os pesos
+ * @param initial_path o caminho inicial. Esse caminho será deletado pela função após utilizado.
+ * @param min o mínimo da range
+ * @param max o máximo da range
+ * 
+ * @returns uma lista de caminhos com o menor custo
+*/
+path_list* solve_problem_for_range(int n, int** adj, path* initial_path, int min, int max){
+    int range_size = (max-min) + 1;
+
+    path_list** pll = new_path_list_list(range_size); //Lista de todos os path lists gerados
+    int min_cost = __INT_MAX__; //Custo mínimo dos caminhos
+
+    //TODO: paralelizar essa seção se possível
+    for(int i = min; i <= max; i++){
+        int current_node = initial_path->nodes[initial_path->size-1];
+        int idx = i-min; //O índice de pll dessa resposta
+        
+        /* somente seguir com a geração da path list 
+        a partir de uma aresta existente do nó atual 
+        para o nó da iteração (custo diferente do custo máximo) */
+        if(!adj[current_node][i] < MAX_COST){ 
+            path* p = copy_path(initial_path);
+            concatenate_to_path(p,i);
+
+            pll[idx] = solve_problem(n, adj, p);
+            delete_path(p);
+        }
+        else{
+            pll[idx] = new_path_list(); //É uma path list vazia
+        }
+
+        // Obtém o custo mínimo dos caminhos possíveis
+        int cost = get_path_list_paths_cost(pll[idx], adj);
+        if(cost != PATH_LIST_EMPTY && cost < min_cost){
+            min_cost = cost;
+        }
+    }
+
+    path_list* res = new_path_list(); //A path list que armazena a resposta
+
+    for(int i = 0; i<range_size; i++){
+        if(get_path_list_paths_cost(pll[i], adj) == min_cost){
+            merge_path_lists(res,pll[i]);
+        }
+
+        delete_path_list_paths(pll[i]);
+        delete_path_list(pll[i]);
+    }
+
+    free(pll);
+
+    return res;
+}
+
 /**
  * Imprime a resposta
  * 
@@ -548,8 +616,48 @@ void print_answer(path_list* pl, int** adj, int n){
     }
 }
 
+/**
+ * Obtém a lista dos melhores caminhos dada a matriz de custos
+ * e uma lista de path lists
+ * 
+ * @param pll uma lista de path lists
+ * @param pll_size o número de elementos na lista de path lists
+ * @param costs a matriz de custos
+ * @return uma lista com os melhores caminhos 
+ */
+path_list* get_final_answer(path_list** pll, int pll_size, int** costs){
+    //TODO: Redução do openmp
+    // Determina o menor custo de um caminho
+    int min_cost = __INT_MAX__;
+    for(int i = 0; i<pll_size; i++){
+        int cost = get_path_list_paths_cost(pll[i],costs);
+        if(cost < min_cost){
+            min_cost = cost;
+        }
+    }
+
+    //TODO: paralelizar *se possível apenas* (merge_path_lists região crítica!!!)
+    // Determina a resposta final
+    path_list* res = new_path_list();
+    for(int i = 0; i<pll_size; i++){
+        if(get_path_list_paths_cost(pll[i],costs) == min_cost){
+            merge_path_lists(res, pll[i]);
+        }
+    }
+
+    return res;
+}
+
+/**
+ * Função que define a lógica principal 
+ * do Worker
+ * 
+ * @param argc 
+ * @param argv 
+ * @return int 
+ */
 int worker_main(int argc, char** argv){
-    if(argc < 2) return 0; //O erro ocorre na manager
+    if(argc < 2) return 0; //O erro já ocorre na manager
 
     int world_rank, world_size;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
@@ -571,8 +679,17 @@ int worker_main(int argc, char** argv){
 
     path_list* res = solve_problem_for_range(n,costs, initial_path, first, last);
 
-    // TODO: enviar as path lists para o manager em um gather
+    int spl_size = (n+1) * (res->size);
+    int* spl = serialize_path_list(res,n+1);
 
+    //Enviando o tamanho da lista serializada em um gather
+    MPI_Gather(&spl_size, 1, MPI_INT, NULL, 1, MPI_INT, MANAGER_PROCESS_RANK, MPI_COMM_WORLD);
+
+    //Envia a lista serializada
+    MPI_Gatherv(spl, spl_size, MPI_INT, NULL, NULL, NULL, MPI_INT, MANAGER_PROCESS_RANK, MPI_COMM_WORLD);
+
+
+    free(spl);
     delete_path(initial_path);
     delete_path_list_paths(res);
     delete_path_list(res);
@@ -581,6 +698,14 @@ int worker_main(int argc, char** argv){
     return 0;
 }
 
+/**
+ * Função que define a lógica principal 
+ * do Manager
+ * 
+ * @param argc 
+ * @param argv 
+ * @return int 
+ */
 int manager_main(int argc, char** argv){
     int world_rank, world_size;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
@@ -611,16 +736,49 @@ int manager_main(int argc, char** argv){
     concatenate_to_path(initial_path, STARTING_NODE);
 
     path_list* res = solve_problem_for_range(n,costs, initial_path, first, last);
+    
+    int* spl = serialize_path_list(res,n+1);
+    int spl_size = (n+1)*res->size;
 
-    //TODO: obter as outras path lists em um gather e as comparar para chegar na resposta definitiva
+    int* sizes = (int*)malloc(world_size*sizeof(int));
+    MPI_Gather(&spl_size,1, MPI_INT,sizes,1,MPI_INT,MANAGER_PROCESS_RANK,MPI_COMM_WORLD);
 
-    print_answer(res, costs, n);
+    /* Calcular o tamanho dos caminhos serializados e os displacements 
+    para o gatherv */
+    int serialized_paths_size = 0;
+    int* displacements = (int*)malloc(world_size*sizeof(int));
+    for(int i = 0; i<world_size; i++){
+        serialized_paths_size += sizes[i];
+        displacements[i] = (i == 0) ? 0 : displacements[i-1] + sizes[i-1];
+    }
 
+    // Obtêm as path lists de cada processo
+    int* serialized_paths = (int*)malloc(serialized_paths_size*sizeof(int));
+    memcpy(serialized_paths, spl, spl_size*sizeof(int));
+    MPI_Gatherv(MPI_IN_PLACE, 0, MPI_INT, serialized_paths, sizes, displacements, MPI_INT, MANAGER_PROCESS_RANK, MPI_COMM_WORLD);
+    path_list** pll = new_path_list_list(world_size);
+    for(int i = 0; i<world_size; i++){
+        pll[i] = deserialize_path_list(serialized_paths + displacements[i], sizes[i], n+1);
+    }
+
+    // Libera memória não utilizada
+    free(sizes);
+    free(spl);
+    free(serialized_paths);
+    free(displacements);
     delete_path(initial_path);
     delete_path_list_paths(res);
     delete_path_list(res);
+
+    path_list* final_res = get_final_answer(pll, world_size, costs);
+
+    print_answer(final_res, costs, n);
+
+    delete_path_list_list(pll, world_size);
     delete_matrix(costs,n);
-    
+    delete_path_list_paths(final_res);
+    delete_path_list(final_res);
+
     return 0;
 }
 
@@ -632,7 +790,7 @@ int main(int argc, char** argv){
     
     int return_value;
 
-    if(world_rank == 0){
+    if(world_rank == MANAGER_PROCESS_RANK){
         return_value = manager_main(argc,argv);
     }
     else{
