@@ -6,13 +6,14 @@
  *
  * Utilize o comando "make par" para compilar esse código
  * O código será compilado no binário pcv, que pode ser
- * executado com "mpirun NP ./pcv N", com NP sendo o número de processos
+ * executado com "mpirun -np NP ./pcv N", com NP sendo o número de processos
 */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <mpi.h>
 
 /*
 ****** Constantes e definições de tipos ********
@@ -355,6 +356,94 @@ int** get_cost_matrix(int n){
 }
 
 /**
+ * Calcula o primeiro e o último nós pelos 
+ * quais esse processo deve seguir a DFS
+ * 
+ * @param start um ponteiro para a variável que armazenará o início
+ * @param end um ponteiro para a fariável que armazenará o fim
+ * @param world_size o número de processos em MPI_COMM_WORLD
+ * @param rank o rank do processo em MPI_COMM_WORLD
+ * @param n o número de cidades
+ * 
+ * @returns void
+*/
+void get_process_range(int* start, int* end, int world_size, int rank, int n){
+    int chunk_size = (n-1)/world_size;
+
+    if(rank == world_size-1){
+        *start = ((world_size-1) * chunk_size) + 1;
+        *end = (n-1);
+    }
+    else{
+        *start = (rank * chunk_size) + 1;
+        *end = ((*start) + chunk_size) - 1;
+    }
+}
+
+path_list* solve_problem(int n, int** adj, path* initial_path);
+
+/**
+ * Resolve o problema para um dado n, uma lista de adjacências, o caminho inicial e uma range
+ * definida por min e max.
+ * Esta é uma versão alterada de solve_problem, que utiliza solve_problem
+ * para fazer a dfs apenas para alguns caminhos específicos.
+ * 
+ * @param n o número de nós no grafo
+ * @param adj a lista de adjacências do grafo, com os pesos
+ * @param initial_path o caminho inicial. Esse caminho será deletado pela função após utilizado.
+ * @param min o mínimo da range
+ * @param max o máximo da range
+ * 
+ * @returns uma lista de caminhos com o menor custo
+*/
+path_list* solve_problem_for_range(int n, int** adj, path* initial_path, int min, int max){
+    int range_size = (max-min) + 1;
+
+    path_list** pll = new_path_list_list(range_size); //Lista de todos os path lists gerados
+    int min_cost = __INT_MAX__; //Custo mínimo dos caminhos
+
+    for(int i = min; i <= max; i++){
+        int current_node = initial_path->nodes[initial_path->size-1];
+        int idx = i-min; //O índice de pll dessa resposta
+        
+        /* somente seguir com a geração da path list 
+        a partir de uma aresta existente do nó atual 
+        para o nó da iteração (custo diferente do custo máximo) */
+        if(!adj[current_node][i] < MAX_COST){ 
+            path* p = copy_path(initial_path);
+            concatenate_to_path(p,i);
+
+            pll[idx] = solve_problem(n, adj, p);
+            delete_path(p);
+        }
+        else{
+            pll[idx] = new_path_list(); //É uma path list vazia
+        }
+
+        // Obtém o custo mínimo dos caminhos possíveis
+        int cost = get_path_list_paths_cost(pll[idx], adj);
+        if(cost != PATH_LIST_EMPTY && cost < min_cost){
+            min_cost = cost;
+        }
+    }
+
+    path_list* res = new_path_list(); //A path list que armazena a resposta
+
+    for(int i = 0; i<range_size; i++){
+        if(get_path_list_paths_cost(pll[i], adj) == min_cost){
+            merge_path_lists(res,pll[i]);
+        }
+
+        delete_path_list_paths(pll[i]);
+        delete_path_list(pll[i]);
+    }
+
+    free(pll);
+
+    return res;
+}
+
+/**
  * Resolve o problema para um dado n, uma lista de adjacências e o caminho inicial.
  * Esse algoritmo é uma busca em profundidade.
  * 
@@ -459,9 +548,46 @@ void print_answer(path_list* pl, int** adj, int n){
     }
 }
 
-int main(int argc, char** argv){
+int worker_main(int argc, char** argv){
+    if(argc < 2) return 0; //O erro ocorre na manager
+
+    int world_rank, world_size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+    int n = atoi(argv[1]);
+
+    int seed;
+    MPI_Bcast(&seed, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    srand(seed);
+
+    int** costs = get_cost_matrix(n);
+
+    int first, last;
+    get_process_range(&first, &last, world_size, world_rank, n);
+
+    path* initial_path = new_path();
+    concatenate_to_path(initial_path, STARTING_NODE);
+
+    path_list* res = solve_problem_for_range(n,costs, initial_path, first, last);
+
+    // TODO: enviar as path lists para o manager em um gather
+
+    delete_path(initial_path);
+    delete_path_list_paths(res);
+    delete_path_list(res);
+    delete_matrix(costs,n);
+
+    return 0;
+}
+
+int manager_main(int argc, char** argv){
+    int world_rank, world_size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
     if(argc < 2){
-        printf("O número de cidades não foi especificado. Execute o programa com \"./pcv N\", onde N é o número de cidades.\n");
+        printf("O número de cidades não foi especificado. Execute o programa com mpirun -np NP \"./pcv N\", onde NP é o número de processos e N o número de cidades do problema.\n");
         return 1;
     }
 
@@ -473,19 +599,47 @@ int main(int argc, char** argv){
     }
 
     int seed = time(0);
+    MPI_Bcast(&seed, 1, MPI_INT, 0, MPI_COMM_WORLD);
     srand(seed);
-
+    
     int** costs = get_cost_matrix(n);
+
+    int first, last;
+    get_process_range(&first, &last, world_size, world_rank, n);
+
     path* initial_path = new_path();
     concatenate_to_path(initial_path, STARTING_NODE);
 
-    path_list* res = solve_problem(n,costs, initial_path);
+    path_list* res = solve_problem_for_range(n,costs, initial_path, first, last);
+
+    //TODO: obter as outras path lists em um gather e as comparar para chegar na resposta definitiva
+
     print_answer(res, costs, n);
 
     delete_path(initial_path);
     delete_path_list_paths(res);
     delete_path_list(res);
     delete_matrix(costs,n);
-
+    
     return 0;
+}
+
+int main(int argc, char** argv){
+    MPI_Init(&argc, &argv);
+
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    
+    int return_value;
+
+    if(world_rank == 0){
+        return_value = manager_main(argc,argv);
+    }
+    else{
+        return_value = worker_main(argc,argv);
+    }
+
+    MPI_Finalize();
+
+    return return_value;
 }
