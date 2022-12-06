@@ -23,6 +23,7 @@
 #define MAX_PATH_SIZE (MAX_GRAPH_SIZE+1) //Tamanho máximo de um caminho
 #define STARTING_NODE 0
 #define COST_NOT_COMPUTED 0
+#define COST_INFINITE -1
 #define PATH_LIST_SIZE 32
 #define PATH_LIST_EMPTY -1
 
@@ -179,7 +180,13 @@ void concatenate_to_path(path* p, int n){
 int get_path_cost(path* p, int** adj){
     if(p->cost == COST_NOT_COMPUTED){
         for(int i = 0; i < (p->size-1); i++){
-            p->cost += adj[p->nodes[i]][p->nodes[i+1]];
+            int current_cost = adj[p->nodes[i]][p->nodes[i+1]];
+            if(current_cost == MAX_COST){
+                p->cost = COST_INFINITE;
+                break;
+            }
+            
+            p->cost += current_cost;
         }
     }
 
@@ -393,10 +400,8 @@ path_list* solve_problem(int n, int** adj, path* initial_path){
             int current_node = initial_path->nodes[initial_path->size-1];
             
             /* somente seguir com a geração da path list 
-            a partir de um nó não visitado, e  se a aresta
-            do nó atual para o nó da iteração existir
-            (custo diferente do custo máximo) */
-            if(!visited[i] && adj[current_node][i] < MAX_COST){ 
+            a partir de um nó não visitado */
+            if(!visited[i]){ 
                 path* p = copy_path(initial_path);
                 concatenate_to_path(p,i);
 
@@ -409,7 +414,7 @@ path_list* solve_problem(int n, int** adj, path* initial_path){
 
             // Obtém o custo mínimo dos caminhos possíveis
             int cost = get_path_list_paths_cost(pll[i], adj);
-            if(cost != PATH_LIST_EMPTY && cost < min_cost){
+            if(cost != PATH_LIST_EMPTY && cost != COST_INFINITE && cost < min_cost){
                 min_cost = cost;
             }
         }
