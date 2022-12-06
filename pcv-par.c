@@ -24,7 +24,7 @@
 #define MAX_PATH_SIZE (MAX_GRAPH_SIZE+1) //Tamanho máximo de um caminho
 #define STARTING_NODE 0
 #define COST_NOT_COMPUTED 0
-#define COST_INFINITE -1
+#define COST_INFINITE __INT_MAX__
 #define PATH_LIST_SIZE 32
 #define PATH_LIST_EMPTY -1
 #define MANAGER_PROCESS_RANK 0
@@ -508,7 +508,7 @@ path_list* solve_problem(int n, int** adj, path* initial_path){
 
             // Obtém o custo mínimo dos caminhos possíveis
             int cost = get_path_list_paths_cost(pll[i], adj);
-            if(cost != PATH_LIST_EMPTY && cost != COST_INFINITE && cost < min_cost){
+            if(cost != PATH_LIST_EMPTY && cost < min_cost){
                 min_cost = cost;
             }
         }
@@ -572,7 +572,7 @@ path_list* solve_problem_for_range(int n, int** adj, path* initial_path, int min
 
         // Obtém o custo mínimo dos caminhos possíveis
         int cost = get_path_list_paths_cost(pll[idx], adj);
-        if(cost != PATH_LIST_EMPTY && cost != COST_INFINITE && cost < min_cost){
+        if(cost != PATH_LIST_EMPTY && cost < min_cost){
             min_cost = cost;
         }
     }
@@ -636,7 +636,7 @@ path_list* get_final_answer(path_list** pll, int pll_size, int** costs){
     int min_cost = __INT_MAX__;
     for(int i = 0; i<pll_size; i++){
         int cost = get_path_list_paths_cost(pll[i],costs);
-        if(cost < min_cost && cost != COST_INFINITE){
+        if(cost < min_cost){
             min_cost = cost;
         }
     }
