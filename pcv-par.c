@@ -556,19 +556,11 @@ path_list* solve_problem_for_range(int n, int** adj, path* initial_path, int min
         int current_node = initial_path->nodes[initial_path->size-1];
         int idx = i-min; //O índice de pll dessa resposta
         
-        /* somente seguir com a geração da path list 
-        a partir de uma aresta existente do nó atual 
-        para o nó da iteração (custo diferente do custo máximo) */
-        if(!adj[current_node][i] < MAX_COST){ 
-            path* p = copy_path(initial_path);
-            concatenate_to_path(p,i);
+        path* p = copy_path(initial_path);
+        concatenate_to_path(p,i);
 
-            pll[idx] = solve_problem(n, adj, p);
-            delete_path(p);
-        }
-        else{
-            pll[idx] = new_path_list(); //É uma path list vazia
-        }
+        pll[idx] = solve_problem(n, adj, p);
+        delete_path(p);
 
         // Obtém o custo mínimo dos caminhos possíveis
         int cost = get_path_list_paths_cost(pll[idx], adj);
