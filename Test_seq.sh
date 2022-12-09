@@ -1,12 +1,12 @@
 #!/usr/bin/env sh
 
-for PROCESS in $(seq 6 10)
+make seq
+for PROCESS in $(seq 8 12)
 do
-    make seq
-    (time (
-    for ((i=0; i<20; i++))
+    time $(
+    for ((i=0; i<$1; i++))
     do
             ./pcv $PROCESS > /dev/null
     done
-    )) > "data/seq-$PROCESS.txt"
+    ) 
 done 
