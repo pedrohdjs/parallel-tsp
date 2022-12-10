@@ -6,7 +6,7 @@
  *
  * Utilize o comando "make seq" para compilar esse código
  * O código será compilado no binário pcv, que pode ser
- * executado com "./pcv N"
+ * executado com "make run-seq", com a entrada definida no próprio makefile
  */
 
 #include <stdio.h>
@@ -21,7 +21,7 @@
 #define MAX_COST                                                               \
   50 // Peso máximo de uma aresta. Quando uma aresta tem esse peso, o custo
      // dessa aresta é considerado infinito (aresta inexistente).
-#define MAX_GRAPH_SIZE 32                  // Tamanho maximo do grafo
+#define MAX_GRAPH_SIZE 15                  // Tamanho maximo do grafo
 #define MAX_PATH_SIZE (MAX_GRAPH_SIZE + 1) // Tamanho máximo de um caminho
 #define STARTING_NODE 0
 #define COST_NOT_COMPUTED 0
@@ -476,7 +476,7 @@ int main(int argc, char **argv) {
 
   if (n + 1 > MAX_GRAPH_SIZE) {
     printf("O N passado é maior que o limite do programa. Isso pode ser "
-           "resolvido se modificando o macro MAX_GRAPH_SIZE, na linha 22, e "
+           "resolvido se modificando o macro MAX_GRAPH_SIZE, na linha 24, e "
            "recompilando o programa. \n");
     return 1;
   }
